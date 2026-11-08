@@ -1,0 +1,5 @@
+#!/bin/sh
+cd /etc/caddy-luci || exit 1
+export XDG_DATA_HOME=/etc/caddy-luci/data
+export XDG_CONFIG_HOME=/tmp/caddy-luci/config
+exec /usr/bin/caddy run --config /etc/caddy-luci/Caddyfile --adapter caddyfile

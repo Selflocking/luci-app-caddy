@@ -1,0 +1,8 @@
+{
+  "admin/services/caddy": {
+    "title": "Caddy",
+    "order": 60,
+    "action": { "type": "view", "path": "caddy/overview" },
+    "depends": { "acl": [ "luci-app-caddy" ] }
+  }
+}

@@ -1,0 +1,28 @@
+#!/bin/sh /etc/rc.common
+
+USE_PROCD=1
+START=95
+STOP=10
+
+start_service() {
+	[ -x /usr/bin/caddy ] || return 1
+	mkdir -p /var/run/caddy-luci /etc/caddy-luci/data /tmp/caddy-luci/config
+	chmod 700 /var/run/caddy-luci /etc/caddy-luci/data /tmp/caddy-luci/config
+	cd /etc/caddy-luci || return 1
+	XDG_DATA_HOME=/etc/caddy-luci/data XDG_CONFIG_HOME=/tmp/caddy-luci/config \
+		/usr/bin/caddy validate --config /etc/caddy-luci/Caddyfile --adapter caddyfile >/dev/null 2>&1 || return 1
+	procd_open_instance
+	procd_set_param command /usr/libexec/caddy-luci-run
+	procd_set_param env XDG_DATA_HOME=/etc/caddy-luci/data XDG_CONFIG_HOME=/tmp/caddy-luci/config
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_set_param respawn 3600 5 5
+	procd_close_instance
+}
+
+reload_service() {
+	cd /etc/caddy-luci || return 1
+	XDG_DATA_HOME=/etc/caddy-luci/data XDG_CONFIG_HOME=/tmp/caddy-luci/config \
+		/usr/bin/caddy reload --address unix//var/run/caddy-luci/admin.sock \
+		--config /etc/caddy-luci/Caddyfile --adapter caddyfile
+}

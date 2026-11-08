@@ -1,0 +1,11 @@
+{
+  "luci-app-caddy": {
+    "description": "Configure the Caddy web server",
+    "read": {
+      "ubus": { "luci.caddy": [ "read", "status", "logs" ] }
+    },
+    "write": {
+      "ubus": { "luci.caddy": [ "validate", "save", "action" ] }
+    }
+  }
+}

@@ -1,0 +1,145 @@
+#!/bin/sh
+# rpcd executable plugin: only fixed paths and whitelisted operations.
+. /usr/share/libubox/jshn.sh
+export XDG_DATA_HOME=/etc/caddy-luci/data
+export XDG_CONFIG_HOME=/tmp/caddy-luci/config
+CONFIG=/etc/caddy-luci/Caddyfile
+LOCK=/var/run/caddy-luci.lock
+TEMP=
+LOCKED=0
+
+cleanup() {
+	[ -z "$TEMP" ] || rm -f "$TEMP"
+	[ "$LOCKED" = 0 ] || rmdir "$LOCK"
+}
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
+
+reply() {
+	json_init
+	json_add_boolean ok "$1"
+	json_add_string message "$2"
+	json_dump
+}
+
+revision() { sha256sum "$CONFIG" | cut -d ' ' -f 1; }
+running() {
+	ubus call service list '{"name":"caddy-luci"}' 2>/dev/null |
+		jsonfilter -e '@["caddy-luci"].instances.*.running' | grep -q '^true$'
+}
+
+lock() {
+	if ! mkdir "$LOCK" 2>/dev/null; then
+		reply 0 'Another Caddy operation is in progress.'
+		exit 0
+	fi
+	LOCKED=1
+}
+
+candidate() {
+	[ -x /usr/bin/caddy ] || { reply 0 'Caddy is not installed at /usr/bin/caddy.'; return 1; }
+	json_get_var content content
+	[ -n "$content" ] && [ "${#content}" -le 262144 ] || {
+		reply 0 'Configuration must be between 1 and 262144 bytes.'; return 1;
+	}
+	TEMP=$(mktemp /etc/caddy-luci/.candidate.XXXXXX) || { reply 0 'Cannot create temporary configuration.'; return 1; }
+	chmod 600 "$TEMP"
+	printf '%s\n' "$content" > "$TEMP" || { reply 0 'Cannot write configuration.'; return 1; }
+	mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME"
+	chmod 700 "$XDG_DATA_HOME" "$XDG_CONFIG_HOME"
+	output=$(/usr/bin/caddy validate --config "$TEMP" --adapter caddyfile 2>&1)
+	[ "$?" = 0 ] || { reply 0 "$output"; return 1; }
+	adapted=$(/usr/bin/caddy adapt --config "$TEMP" --adapter caddyfile 2>/dev/null) || {
+		reply 0 'Cannot adapt Caddyfile.'; return 1;
+	}
+	admin=$(printf '%s' "$adapted" | jsonfilter -e '@.admin.listen')
+	[ "$admin" = 'unix//var/run/caddy-luci/admin.sock' ] || {
+		reply 0 'Keep admin unix//var/run/caddy-luci/admin.sock in the global options block.'; return 1;
+	}
+}
+
+case "$1" in
+	list)
+		printf '%s\n' '{"read":{},"status":{},"logs":{},"validate":{"content":""},"save":{"content":"","revision":"","apply":true},"action":{"name":""}}'
+		;;
+	call)
+		cd /etc/caddy-luci || { reply 0 'Configuration directory is missing.'; exit 0; }
+		IFS= read -r request
+		json_load "$request" || { reply 0 'Invalid JSON request.'; exit 0; }
+		case "$2" in
+			read)
+				lock
+				text=$(cat "$CONFIG") || { reply 0 'Cannot read Caddyfile.'; exit 0; }
+				json_init
+				json_add_boolean ok 1
+				json_add_string content "$text"
+				json_add_string revision "$(revision)"
+				json_dump
+				;;
+			status)
+				active=0; running && active=1
+				enabled=0; /etc/init.d/caddy-luci enabled && enabled=1
+				version=$(/usr/bin/caddy version 2>/dev/null)
+				json_init
+				json_add_boolean ok 1
+				json_add_boolean running "$active"
+				json_add_boolean enabled "$enabled"
+				json_add_string version "${version:-Not installed}"
+				json_dump
+				;;
+			logs)
+				logs=$(logread -e 'caddy' | tail -n 100)
+				json_init; json_add_boolean ok 1; json_add_string content "$logs"; json_dump
+				;;
+			validate)
+				lock
+				candidate && reply 1 "$output"
+				;;
+			save)
+				lock
+				json_get_var expected revision
+				json_get_var apply apply
+				[ "$expected" = "$(revision)" ] || { reply 0 'Configuration changed. Reload the page before saving.'; exit 0; }
+				candidate || exit 0
+				cp -p "$CONFIG" "$CONFIG.bak" || { reply 0 'Cannot back up configuration.'; exit 0; }
+				mv -f "$TEMP" "$CONFIG" || { reply 0 'Cannot save configuration.'; exit 0; }
+				TEMP=
+				if [ "$apply" = 1 ]; then
+					was_running=0
+					if running; then
+						was_running=1
+						output=$(/etc/init.d/caddy-luci reload 2>&1)
+						result=$?
+					else
+						output=$(/etc/init.d/caddy-luci start 2>&1)
+						result=$?
+						for attempt in 1 2 3 4 5; do running && break; sleep 1; done
+						running || result=1
+					fi
+					if [ "$result" != 0 ]; then
+						[ "$was_running" = 1 ] || /etc/init.d/caddy-luci stop >/dev/null 2>&1
+						mv -f "$CONFIG.bak" "$CONFIG"
+						reply 0 "Apply failed; previous file restored. $output"
+						exit 0
+					fi
+				fi
+				json_init; json_add_boolean ok 1
+				json_add_string revision "$(revision)"
+				json_add_string message 'Configuration saved.'; json_dump
+				;;
+			action)
+				lock
+				json_get_var name name
+				case "$name" in
+					start|stop|restart|enable|disable)
+						output=$(/etc/init.d/caddy-luci "$name" 2>&1)
+						result=$?
+						[ "$result" = 0 ] && reply 1 "$output" || reply 0 "$output"
+						;;
+					*) reply 0 'Unsupported service action.' ;;
+				 esac
+				;;
+			*) reply 0 'Unknown method.' ;;
+		esac
+		;;
+esac
