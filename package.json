@@ -2,7 +2,8 @@
   "name": "luci-app-caddy-tests",
   "private": true,
   "scripts": {
-    "test": "node --test tests/*.test.cjs"
+    "test": "node --test tests/*.test.cjs",
+    "check": "sh scripts/check.sh"
   },
   "devDependencies": {
     "jsdom": "26.1.0"
