@@ -3,3 +3,4 @@ __pycache__/
 *.ipk
 *.apk
 node_modules/
+dist/
