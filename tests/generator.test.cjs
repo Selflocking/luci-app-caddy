@@ -36,6 +36,38 @@ test('rejects malformed values, duplicate addresses and directive injection', ()
   assert.throws(() => generator.generate([site({ type: 'files', root: 'relative' })]));
 });
 
+test('visual configuration round trips every supported site without losing options', () => {
+  const config = generator.generate([
+    site({ address: 'one.example.com, two.example.com', internal: true, compress: true, log: true }),
+    site({ address: ':8081', type: 'files', root: '/srv/my site', browse: true }),
+    site({ address: ':8082', type: 'respond', body: '你好 "Caddy" # {http.request.uri}\nsecond line' })
+  ], 'admin@example.com');
+  const parsed = generator.parse(config);
+  assert.equal(parsed.sites.length, 3);
+  assert.equal(generator.generate(parsed.sites, parsed.email), config);
+  const initial = fs.readFileSync(path.join(__dirname, '../root/etc/caddy-luci/Caddyfile'), 'utf8');
+  assert.equal(generator.parse(initial).sites[0].body, 'Caddy is running on OpenWrt');
+  assert.equal(generator.parse('# comment\n' + config.replace('tls internal', 'tls internal # inline comment')).sites[0].internal, true);
+});
+
+test('visual import refuses unknown directives and partial configurations', () => {
+  const config = generator.generate([site()]);
+  for (const modified of [
+    config.replace('reverse_proxy', 'custom_handler'),
+    config.replace('reverse_proxy', 'header X-Test value\n\treverse_proxy'),
+    config.replace('reverse_proxy', 'handle {\n\treverse_proxy'),
+    config.replace('reverse_proxy', 'root * /srv\n\treverse_proxy'),
+    config.replace('reverse_proxy', 'log {\n\treverse_proxy'),
+    config.replace('reverse_proxy', 'encode gzip\n\treverse_proxy'),
+    config.replace('reverse_proxy', 'tls /cert /key\n\treverse_proxy'),
+    config.replace('reverse_proxy', 'respond "other" 404\n\treverse_proxy'),
+    config.replace('reverse_proxy', 'reverse_proxy localhost:80\n\treverse_proxy'),
+    config.replace('admin unix//var/run/caddy-luci/admin.sock', 'admin off'),
+    config.trim().slice(0, -1),
+    'import /etc/caddy-luci/sites/*'
+  ]) assert.throws(() => generator.parse(modified), modified);
+});
+
 async function port() {
   const server = net.createServer();
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
