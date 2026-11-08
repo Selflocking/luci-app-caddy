@@ -16,7 +16,7 @@
 ## 编译
 
 需要已配置目标架构的 OpenWrt 源码或 SDK，以及 `luci`、`packages` feeds。
-推荐使用支持现代 LuCI JS 的固件（23.05 及以后）；尚未在路由器实机验证。
+推荐使用支持现代 LuCI JS 的固件（23.05 及以后）。已在 GL-MT3600BE 的 Kwrt 25.12-SNAPSHOT 上完成安装与实机联调，详见[部署记录](docs/deployment-2026-11-08.md)。
 附带的 Caddy 2.11.9 构建配方需要 **Go 1.26 或更新版本的 OpenWrt golang feed**。
 旧 SDK 可使用已有、兼容目标系统的 Caddy 2 软件包，或升级 golang feed；不能直接用旧版 Go 编译本配方。
 
@@ -39,7 +39,24 @@ make package/luci-app-caddy/compile V=s
 ```
 
 输出在 `bin/packages/` 内；具体包格式由 SDK 决定。`luci-app-caddy` 与架构无关，
-`caddy` 必须匹配路由器 CPU 架构。仓库没有附带已编译安装包。
+`caddy` 必须匹配路由器 CPU 架构。Git 仓库不提交二进制，本地构建产物保存在 `dist/`。
+
+### ARM64 独立构建（opkg）
+
+对于使用 opkg 的 ARM64 固件，也可以直接用 Go 交叉编译 Caddy，再用 Python 打包；
+这条路径不使用 OpenWrt SDK，不适用于 APK 固件。LuCI JavaScript 无需本地代码编译。
+
+先从 Caddy 官方获取与 `packages/caddy/Makefile` 一致的源码，校验 `PKG_HASH` 后解压，然后运行：
+
+```sh
+python3 scripts/build-ipk.py --caddy-source /absolute/path/to/caddy-2.11.9
+# 可选：--arch aarch64_generic，默认 aarch64_cortex-a53
+```
+
+脚本自动设置 `GOOS=linux GOARCH=arm64 CGO_ENABLED=0`，通过 Go toolchain 自动下载所需编译器。
+输出 `dist/caddy_2.11.9-r1_aarch64_cortex-a53.ipk`、`dist/luci-app-caddy_1.1.0-r1_all.ipk`
+和含 SHA-256 校验值的 `dist/build-info.json`。
+如果已有静态 ARM64 二进制，可以改用 `--caddy-binary /absolute/path/to/caddy`；此选项只打包，不编译。
 
 附带的 `caddy` 包仅安装官方标准模块二进制，不含第三方 DNS provider。
 如果使用其他 feed 的 Caddy 包，该包自己的服务与本插件的 `caddy-luci` 服务需要避免同时监听相同端口。
@@ -141,13 +158,14 @@ node --test tests/generator.test.cjs
 npm ci --ignore-scripts
 CADDY_BIN=/absolute/path/to/caddy npm test
 CADDY_BIN=/absolute/path/to/caddy python3 tests/backend_test.py
+python3 tests/packaging_test.py
 ```
 
 集成测试启动本机临时 Caddy 和 HTTP 上游，验证反代、文件服务、文本响应、平滑加载与错误加载。
 DOM 交互测试验证表单回填、保存再读取、删除确认、只读权限、高级配置保护和保存冲突后的改动保留。
 后端测试在临时目录运行实际 RPC shell 脚本，使用真实 Caddy 校验与适配；
 `jshn`、`ubus`、`jsonfilter`、procd 由测试替身模拟，不操作主机系统服务。
-这些测试不能代替 OpenWrt SDK 编译及 LuCI/rpcd/procd 实机联调。
+本地测试不能代替目标固件的安装和联调。当前已验证的设备与构建方法见部署记录，尚未执行完整 OpenWrt SDK 构建。
 
 ## 参考
 
