@@ -1,4 +1,0 @@
-#!/bin/sh
-# Installing a web UI must not open a new listener automatically.
-/etc/init.d/caddy-luci disable
-exit 0
