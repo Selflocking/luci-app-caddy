@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 *.ipk
 *.apk
+node_modules/
