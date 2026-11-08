@@ -5,9 +5,9 @@
 ## 功能
 
 - 中文管理页面：**服务 → Caddy**。
-- 多站点生成器：反向代理（多个上游）、静态文件、文本响应。
+- 独立可视化站点页面：读取已有站点，使用表单添加、修改、删除反向代理（多个上游）、静态文件和文本响应。
 - 自动 HTTPS、内部 CA、压缩、访问日志、可选目录浏览。
-- 完整 Caddyfile 编辑；生成器预览确认后替换编辑器，不会解析或自动覆盖已有文件。
+- 表单实时预览 Caddyfile，直接校验、保存或保存并应用；高级页面保留完整 Caddyfile 编辑。
 - 保存前使用 Caddy 校验；保存并应用时平滑加载，服务未启动则启动。
 - 应用失败恢复之前的配置文件；通过 SHA-256 版本检查避免覆盖其他页面的修改。
 - 服务启停、重启、开机启动控制、每 5 秒更新状态、最近 100 条日志。
@@ -62,10 +62,20 @@ OpenWrt 的标准安装流程会启动并启用服务。默认配置在 **8080**
 不占用 LuCI 常见的 80/443 端口。可在页面中停止服务或禁用开机启动。
 插件不会修改 uhttpd、防火墙或 DNS。
 
-1. 展开“站点配置生成器”，填写域名或 `:8080`、站点类型和上游/网站目录。
-2. 点击“生成配置预览”，确认后替换编辑器内容；也可直接编辑 Caddyfile。
-3. 点击“校验配置”，再“保存并应用”。“保存”只写入配置文件。
+1. 进入 **服务 → Caddy → 站点配置**，已有配置会自动回填到表单。
+2. 添加或修改站点，填写域名或 `:8080`、站点类型和上游/网站目录。展开“查看生成的 Caddyfile”可查看实时预览。
+3. 点击“校验配置”，再“保存并应用”。“保存”只写入配置文件；删除站点也需保存后才会生效。
 4. 配置域名时，确认 DNS 指向路由器，所需验证端口可达，并处理 uhttpd 的端口占用。
+
+**高级配置与服务**页面可直接编辑原始文件，也提供服务启停、开机启动和日志查看。
+两个页面操作同一配置文件，使用版本检查防止相互覆盖。若提示配置已改变，先保留本页改动，再重新读取配置。
+
+可视化页面可读取本插件生成的配置和默认配置，支持全局 `admin`、`email`，站点 `reverse_proxy`、
+`root *`、`file_server [browse]`、`respond ... 200`、`tls internal`、`encode zstd gzip` 和默认 `log`。
+它不承担任意 Caddyfile 语法的无损解析：遇到 `handle`、`import`、自定义证书、嵌套块等暂不支持的配置，
+会禁用可视化保存并提示使用高级页面，避免丢弃已有设置。
+修改表单并保存会统一排版、移除注释；未修改表单直接应用时保留原始注释与排版。
+删除最后一个站点后，需添加至少一个站点才能保存。
 
 公有域名默认由 Caddy 自动申请和续期证书。`http://example.com:8080` 或 `:8080` 使用 HTTP。
 内部 CA 适合局域网域名，需要在客户端信任其根证书。
@@ -122,16 +132,19 @@ ubus call luci.caddy status
 
 ## 本地验证
 
-需要 Node.js 18+、Python 3 和本机可执行的 Caddy 2：
+需要 Node.js 18+、Python 3 和本机可执行的 Caddy 2。jsdom 仅用于开发测试，路由器上无需 Node.js 或 npm：
 
 ```sh
 node --check htdocs/luci-static/resources/view/caddy/overview.js
+node --check htdocs/luci-static/resources/view/caddy/sites.js
 node --test tests/generator.test.cjs
-CADDY_BIN=/absolute/path/to/caddy node --test tests/generator.test.cjs
+npm ci --ignore-scripts
+CADDY_BIN=/absolute/path/to/caddy npm test
 CADDY_BIN=/absolute/path/to/caddy python3 tests/backend_test.py
 ```
 
 集成测试启动本机临时 Caddy 和 HTTP 上游，验证反代、文件服务、文本响应、平滑加载与错误加载。
+DOM 交互测试验证表单回填、保存再读取、删除确认、只读权限、高级配置保护和保存冲突后的改动保留。
 后端测试在临时目录运行实际 RPC shell 脚本，使用真实 Caddy 校验与适配；
 `jshn`、`ubus`、`jsonfilter`、procd 由测试替身模拟，不操作主机系统服务。
 这些测试不能代替 OpenWrt SDK 编译及 LuCI/rpcd/procd 实机联调。
