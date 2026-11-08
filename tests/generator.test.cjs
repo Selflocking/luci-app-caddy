@@ -68,6 +68,16 @@ test('visual import refuses unknown directives and partial configurations', () =
   ]) assert.throws(() => generator.parse(modified), modified);
 });
 
+test('visual text import preserves Caddy literal escapes and multiline responses', () => {
+  const body = 'first line\n"quoted"\tC:\\files\\index.html';
+  const config = generator.generate([site({ type: 'respond', body })]);
+  assert.equal(generator.parse(config).sites[0].body, body);
+  const literal = generator.generate([site({ type: 'respond', body: 'placeholder' })])
+    .replace('"placeholder"', '"a\\nb"');
+  assert.equal(generator.parse(literal).sites[0].body, 'a\\nb');
+  assert.throws(() => generator.generate([site({ type: 'respond', body: '`code`\nsecond line' })]));
+});
+
 async function port() {
   const server = net.createServer();
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -87,10 +97,11 @@ test('real Caddy serves proxy, files and text, then reloads without losing servi
   const configPath = path.join(directory, 'Caddyfile');
   const socket = 'unix/' + path.join(directory, 'admin.sock');
   fs.writeFileSync(path.join(directory, 'index.html'), 'static content');
+  const response = '你好 "Caddy"\nC:\\files\\index.html';
   const config = generator.generate([
     site({ address: 'http://127.0.0.1:' + ports[0], upstream: '127.0.0.1:' + upstream.address().port }),
     site({ address: 'http://127.0.0.1:' + ports[1], type: 'files', root: directory }),
-    site({ address: 'http://127.0.0.1:' + ports[2], type: 'respond', body: '你好 "Caddy"' })
+    site({ address: 'http://127.0.0.1:' + ports[2], type: 'respond', body: response })
   ]).replace('unix//var/run/caddy-luci/admin.sock', socket);
   fs.writeFileSync(configPath, config);
   const env = { ...process.env, XDG_DATA_HOME: directory, XDG_CONFIG_HOME: directory };
@@ -106,13 +117,13 @@ test('real Caddy serves proxy, files and text, then reloads without losing servi
     assert.ok(ready, 'Caddy must start');
     assert.equal(await (await fetch('http://127.0.0.1:' + ports[0] + '/hello')).text(), 'upstream:/hello');
     assert.equal(await (await fetch('http://127.0.0.1:' + ports[1])).text(), 'static content');
-    assert.equal(await (await fetch('http://127.0.0.1:' + ports[2])).text(), '你好 "Caddy"');
+    assert.equal(await (await fetch('http://127.0.0.1:' + ports[2])).text(), response);
     fs.writeFileSync(configPath, config.replace('你好', '已更新'));
     cli(['reload', '--address', socket, '--config', configPath, '--adapter', 'caddyfile']);
-    assert.equal(await (await fetch('http://127.0.0.1:' + ports[2])).text(), '已更新 "Caddy"');
+    assert.equal(await (await fetch('http://127.0.0.1:' + ports[2])).text(), response.replace('你好', '已更新'));
     fs.writeFileSync(configPath, 'invalid {');
     assert.throws(() => cli(['reload', '--address', socket, '--config', configPath, '--adapter', 'caddyfile']));
-    assert.equal(await (await fetch('http://127.0.0.1:' + ports[2])).text(), '已更新 "Caddy"');
+    assert.equal(await (await fetch('http://127.0.0.1:' + ports[2])).text(), response.replace('你好', '已更新'));
   } finally {
     child.kill('SIGTERM');
     await new Promise(resolve => child.once('exit', resolve));

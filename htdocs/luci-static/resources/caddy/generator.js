@@ -3,7 +3,14 @@
 
 // Values are emitted as single Caddyfile tokens, never as raw directives.
 function quote(value) {
-	return JSON.stringify(String(value));
+	value = String(value);
+	// Caddyfile only unescapes double quotes; JSON string escaping would turn
+	// newlines and backslashes into different response content.
+	if (/[\\\r\n\t]/.test(value)) {
+		if (value.includes('`')) throw new Error('同时包含反引号与换行或反斜杠的文本请使用高级配置');
+		return '`' + value + '`';
+	}
+	return '"' + value.replace(/"/g, '\\"') + '"';
 }
 
 function address(value) {
@@ -18,28 +25,49 @@ function address(value) {
 
 // Deliberately accept only directives the form can reproduce. Unknown Caddy
 // syntax must never disappear merely because the user opened the visual view.
-function tokens(line) {
-	const values = [];
-	let rest = line.trim();
-	while (rest && rest[0] !== '#') {
-		let value;
-		if (rest[0] === '"') {
-			const match = rest.match(/^"(?:[^"\\]|\\.)*"/);
-			if (!match) throw new Error('字符串未闭合');
-			value = JSON.parse(match[0]);
-			rest = rest.slice(match[0].length);
-			if (rest && !/^\s/.test(rest)) throw new Error('字符串后缺少空格');
+function tokenLines(content) {
+	const records = [];
+	let offset = 0, line = 1, start = 1, values = [];
+	while (offset < content.length) {
+		const ch = content[offset];
+		if (ch === '\n') {
+			if (values.length) records.push({ values: values, line: start });
+			values = []; offset++; line++; start = line;
+			continue;
+		}
+		if (/\s/.test(ch)) { offset++; continue; }
+		if (ch === '#') {
+			while (offset < content.length && content[offset] !== '\n') offset++;
+			continue;
+		}
+		let value = '';
+		if (ch === '"' || ch === '`') {
+			const delimiter = ch;
+			offset++;
+			let closed = false;
+			while (offset < content.length) {
+				const current = content[offset++];
+				if (current === delimiter) { closed = true; break; }
+				if (delimiter === '"' && current === '\\' && offset < content.length) {
+					const next = content[offset++];
+					value += next === '"' ? '"' : '\\' + next;
+					if (next === '\n') line++;
+				} else {
+					value += current;
+					if (current === '\n') line++;
+				}
+			}
+			if (!closed) throw new Error('第 ' + start + ' 行：字符串未闭合');
+			if (offset < content.length && !/\s/.test(content[offset])) throw new Error('第 ' + line + ' 行：字符串后缺少空格');
 		} else {
-			const match = rest.match(/^\S+/)[0];
-			if (match !== '{' && match !== '}' && /[{}"`\\#]/.test(match))
-				throw new Error('包含暂不支持的语法');
-			value = match;
-			rest = rest.slice(match.length);
+			while (offset < content.length && !/\s/.test(content[offset])) value += content[offset++];
+			if (value !== '{' && value !== '}' && /[{}"`\\#]/.test(value))
+				throw new Error('第 ' + line + ' 行：包含暂不支持的语法');
 		}
 		values.push(value);
-		rest = rest.trimStart();
 	}
-	return values;
+	if (values.length) records.push({ values: values, line: start });
+	return records;
 }
 
 return baseclass.extend({
@@ -47,9 +75,9 @@ return baseclass.extend({
 		const result = { email: '', sites: [] };
 		let global = false, globalDone = false, admin = false, site = null;
 		let seen = new Set();
-		String(content).split(/\r?\n/).forEach(function(line, index) {
+		tokenLines(String(content)).forEach(function(record) {
 			try {
-				const t = tokens(line);
+				const t = record.values;
 				if (!t.length) return;
 				if (!global && !site) {
 					if (!globalDone && !result.sites.length && t.length === 1 && t[0] === '{') {
@@ -111,7 +139,7 @@ return baseclass.extend({
 				default: throw new Error('配置项暂不支持：' + t[0]);
 				}
 			} catch (error) {
-				throw new Error('第 ' + (index + 1) + ' 行：' + error.message);
+				throw new Error('第 ' + record.line + ' 行：' + error.message);
 			}
 		});
 		if (global || site || !globalDone) throw new Error('配置块不完整');
