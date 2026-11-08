@@ -94,9 +94,12 @@ return view.extend({
 			E('option', { 'value': 'auto' }, '自动（域名自动申请公有证书）'), E('option', { 'value': 'internal' }, '内部 CA（局域网证书）')
 		]);
 		tls.value = site.internal ? 'internal' : 'auto';
-		const compress = E('input', { 'type': 'checkbox', 'checked': !!site.compress });
-		const log = E('input', { 'type': 'checkbox', 'checked': !!site.log });
-		const browse = E('input', { 'type': 'checkbox', 'checked': !!site.browse });
+		const compress = E('input', { 'type': 'checkbox' });
+		const log = E('input', { 'type': 'checkbox' });
+		const browse = E('input', { 'type': 'checkbox' });
+		compress.checked = !!site.compress;
+		log.checked = !!site.log;
+		browse.checked = !!site.browse;
 		const upstreamField = field('上游服务', upstream, '多个上游用空格分隔，例如 192.168.1.10:3000。');
 		const directoryField = field('网站目录', directory, '填写路由器上的绝对路径。');
 		const bodyField = field('响应内容', body);

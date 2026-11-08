@@ -18,8 +18,7 @@ function setup({ content = initial, readonly = false, failSave = false } = {}) {
     const node = document.createElement(tag);
     Object.entries(attributes || {}).forEach(([key, value]) => {
       if (typeof value === 'function') node.addEventListener(key, value);
-      else if (value === true) node.setAttribute(key, '');
-      else if (value !== false && value != null) node.setAttribute(key, value);
+      else if (value != null) node.setAttribute(key, value);
     });
     for (const child of Array.isArray(children) ? children : [children]) {
       if (child != null) node.append(child);
@@ -59,6 +58,7 @@ test('visual page edits existing content, saves with revision and reloads persis
   const app = setup();
   assert.equal(app.root.querySelectorAll('.caddy-site').length, 1);
   assert.equal(app.view.dirty, false);
+  assert.equal(app.root.querySelector('input[type="checkbox"]').checked, false);
   app.change(app.root.querySelector('textarea'), '可视化修改');
   assert.equal(app.view.dirty, true);
   assert.match(app.view.preview.textContent, /可视化修改/);

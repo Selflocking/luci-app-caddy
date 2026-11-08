@@ -39,9 +39,9 @@ return view.extend({
 	button: function(text, action, primary) {
 		const button = E('button', {
 			'class': 'cbi-button ' + (primary ? 'cbi-button-action important' : 'cbi-button-neutral'),
-			'click': L.bind(function() { this.busy(action); }, this),
-			'disabled': this.readonly
+			'click': L.bind(function() { this.busy(action); }, this)
 		}, text);
+		button.disabled = this.readonly;
 		this.buttons.push(button);
 		return button;
 	},
@@ -61,7 +61,8 @@ return view.extend({
 		this.status = E('p', { 'role': 'status', 'aria-live': 'polite' });
 		this.updateStatus(data[1]);
 		this.editor = E('textarea', { 'class': 'cbi-input-textarea', 'rows': 23, 'spellcheck': 'false',
-			'aria-label': 'Caddyfile', 'readonly': this.readonly, 'style': 'width:100%;font-family:monospace;tab-size:4' });
+			'aria-label': 'Caddyfile', 'style': 'width:100%;font-family:monospace;tab-size:4' });
+		this.editor.readOnly = this.readonly;
 		this.editor.value = data[0].content;
 		this.editor.addEventListener('keydown', function(event) {
 			if (event.key === 'Tab' && !event.shiftKey && !event.target.readOnly) {

@@ -11,7 +11,7 @@ start_service() {
 	cd /etc/caddy-luci || return 1
 	XDG_DATA_HOME=/etc/caddy-luci/data XDG_CONFIG_HOME=/tmp/caddy-luci/config \
 		/usr/bin/caddy validate --config /etc/caddy-luci/Caddyfile --adapter caddyfile >/dev/null 2>&1 || return 1
-	procd_open_instance
+	procd_open_instance main
 	procd_set_param command /usr/libexec/caddy-luci-run
 	procd_set_param env XDG_DATA_HOME=/etc/caddy-luci/data XDG_CONFIG_HOME=/tmp/caddy-luci/config
 	procd_set_param stdout 1
